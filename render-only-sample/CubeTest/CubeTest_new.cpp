@@ -131,7 +131,7 @@ private:
     bool FindAdapter(WCHAR * inDescription)
     {
         assert(inDescription != NULL);
-
+        wprintf(inDescription);
         bool found = false;
         IDXGIFactory2 * factory = NULL;
         HRESULT hr = CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), ((void **)&factory));
@@ -424,11 +424,164 @@ private:
     std::shared_ptr<D3DDevice>              m_pDevice;
 };
 
+char *DXGIFormatToString(DXGI_FORMAT format)
+{
+    switch(format)
+    {
+    case DXGI_FORMAT_R8G8B8A8_UNORM:
+        return "R8G8B8A8_UNORM";
+
+    case DXGI_FORMAT_R8G8_UNORM:
+        return "DXGI_FORMAT_R8G8_UNORM";
+
+    case DXGI_FORMAT_R8_UNORM:
+        return "DXGI_FORMAT_R8_UNORM";
+
+    case DXGI_FORMAT_A8_UNORM:
+        return "DXGI_FORMAT_A8_UNORM";
+
+    default:
+        return "UNKNOWN";
+    }
+}
+
 class D3DBitmapTexture
 {
 public:
 
-    D3DBitmapTexture(std::shared_ptr<D3DDevice> & inDevice)
+    void ConverTextureFromRGBA(PBYTE pTexels, DXGI_FORMAT outFormat, ULONG texWidth, ULONG texHeight, D3D11_SUBRESOURCE_DATA &initData)
+    {
+        if (outFormat == DXGI_FORMAT_R8G8B8A8_UNORM)
+        {
+            // Conversion is not needed - fill the fields actually
+            initData.pSysMem = pTexels;
+            initData.SysMemPitch = texWidth * 4;
+            initData.SysMemSlicePitch = texWidth * 4 * texHeight;
+            return;
+        }
+
+        if (outFormat == DXGI_FORMAT_R8G8_UNORM)
+        {
+            BYTE *colorConvertedBuffer = (BYTE*)malloc(texWidth * texHeight * sizeof(WORD) * 2);
+            if (colorConvertedBuffer == NULL)
+            {
+                initData.pSysMem = NULL;
+                initData.SysMemPitch = 0;
+                initData.SysMemSlicePitch = 0;
+                
+                throw std::exception("Failed to alloc memory for color converted bitmap");
+            }
+
+            memset(colorConvertedBuffer, 0, texWidth * texHeight * 2);
+
+            initData.SysMemPitch = texWidth * 2;
+            initData.pSysMem = colorConvertedBuffer;
+            initData.SysMemSlicePitch = texHeight* texWidth * 2;
+
+            for (UINT k = 0; k < texHeight; k++)
+            {
+                for (UINT i = 0; i < texWidth * 4; i += 4)
+                {
+                    double red = pTexels[i];
+                    double green = pTexels[i + 1];
+                    double blue = pTexels[i + 2];
+                   
+                    double y = 0.299 * red + 0.587 * green + 0.114 * blue;
+                    double u = 0.564 * (blue - y) + 0.5;
+                    double v = 0.713 * (red - y) + 0.5;
+
+                    *colorConvertedBuffer++ = (BYTE)u;
+                    *colorConvertedBuffer++ = (BYTE)v;
+
+                }
+                pTexels += texWidth * 4;
+            }
+            
+            return;
+        }
+
+        if (outFormat == DXGI_FORMAT_R8_UNORM)
+        {
+            BYTE *colorConvertedBuffer = (BYTE*)malloc(texWidth * texHeight);
+            if (colorConvertedBuffer == NULL)
+            {
+                initData.pSysMem = NULL;
+                initData.SysMemPitch = 0;
+                initData.SysMemSlicePitch = 0;
+                
+                throw std::exception("Failed to alloc memory for color converted bitmap");
+
+                return;
+            }
+
+            memset(colorConvertedBuffer, 0, texHeight * texWidth);
+
+            initData.SysMemPitch = texWidth;
+            initData.pSysMem = colorConvertedBuffer;
+            initData.SysMemSlicePitch = texWidth * texHeight;
+
+            for (UINT k = 0; k < texHeight; k++)
+            {
+                for (UINT i = 0; i < texWidth * 4; i += 4)
+                {
+                    double red = pTexels[i];
+                    double green = pTexels[i + 1];
+                    double blue = pTexels[i + 2];
+
+                    double y = 0.299 * red + 0.587 * green + 0.114 * blue;
+
+                    *colorConvertedBuffer++ = (BYTE)y;
+                }
+                pTexels += texWidth * 4;
+            }         
+            return;
+        }
+
+        if (outFormat == DXGI_FORMAT_A8_UNORM)
+        {
+            //????
+            BYTE *colorConvertedBuffer = (BYTE*)malloc(texWidth * texHeight);
+            if (colorConvertedBuffer == NULL)
+            {
+                initData.pSysMem = NULL;
+                initData.SysMemPitch = 0;
+                initData.SysMemSlicePitch = 0;
+                
+                throw std::exception("Failed to alloc memory for color converted bitmap");
+
+                return;
+            }
+
+            memset(colorConvertedBuffer, 0, texHeight * texWidth);
+
+            initData.SysMemPitch = texWidth;
+            initData.pSysMem = colorConvertedBuffer;
+            initData.SysMemSlicePitch = texWidth * texHeight;
+
+            for (UINT k = 0; k < texHeight; k++)
+            {
+                for (UINT i = 0; i < texWidth * 4; i += 4)
+                {
+                    double red = pTexels[i];
+                    double green = pTexels[i + 1];
+                    double blue = pTexels[i + 2];
+
+                    double y = 0.299 * red + 0.587 * green + 0.114 * blue;
+
+                    *colorConvertedBuffer = (BYTE)y;
+                    colorConvertedBuffer++;
+                }
+                pTexels += texWidth * 4;
+            }
+
+            return;
+        }
+
+        throw std::exception("Not implemented texture color format passed");
+
+    }
+
+    D3DBitmapTexture(std::shared_ptr<D3DDevice> & inDevice, DXGI_FORMAT textureFormat = DXGI_FORMAT_R8G8B8A8_UNORM)
     {
         ULONG texWidth, texHeight, resSize;
         PVOID pRes;
@@ -452,7 +605,7 @@ public:
         desc.Height = texHeight;
         desc.MipLevels = 1;
         desc.ArraySize = 1;
-        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.Format = textureFormat;
         desc.SampleDesc.Count = 1;
         desc.SampleDesc.Quality = 0;
         desc.Usage = D3D11_USAGE_DEFAULT;
@@ -462,9 +615,8 @@ public:
         D3D11_SUBRESOURCE_DATA initData;
 
         ZeroMemory(&initData, sizeof(initData));
-        initData.pSysMem = pTexels;
-        initData.SysMemPitch = texWidth * 4;
-        initData.SysMemSlicePitch = texWidth * 4 * texHeight;
+
+        ConverTextureFromRGBA(pTexels, textureFormat, texWidth, texHeight, initData);
 
         ID3D11Texture2D * pTexture;
 
@@ -1204,13 +1356,16 @@ class D3DEngine
 {
 public:
 
-    D3DEngine()
+    D3DEngine(DXGI_FORMAT textureFormat = DXGI_FORMAT_R8G8B8A8_UNORM)
     {
+
+        m_textureFormat = textureFormat;
 #if USE_VC4
-        m_pDevice = std::shared_ptr<D3DDevice>(new D3DDevice(L"Render Only Sample Driver"));
+       // m_pDevice = std::shared_ptr<D3DDevice>(new D3DDevice(L"Render Only Sample Driver"));
 #else
         m_pDevice = std::shared_ptr<D3DDevice>(new D3DDevice(L"Microsoft Basic Render Driver"));
 #endif // VC4
+        m_pDevice = std::shared_ptr<D3DDevice>(new D3DDevice(L"Microsoft Basic Render Driver"));
 
         // Create render target
 
@@ -1250,7 +1405,7 @@ public:
         m_pPSConstantBuffer = std::unique_ptr<D3DPSConstantBuffer>(new D3DPSConstantBuffer(m_pDevice));
 
 #if USE_BITMAP_TEX
-        m_pDefaultTexture = std::unique_ptr<D3DBitmapTexture>(new D3DBitmapTexture(m_pDevice));
+        m_pDefaultTexture = std::unique_ptr<D3DBitmapTexture>(new D3DBitmapTexture(m_pDevice, m_textureFormat));
 #else
         m_pDefaultTexture = std::unique_ptr<D3DDefaultTexture>(new D3DDefaultTexture(m_pDevice, 256, 256));
 #endif // USE_BITMAP_TEX
@@ -1360,10 +1515,11 @@ public:
             m_pDevice->GetContext()->CopyResource(m_pStagingTexture->GetTexture(), m_pRenderTarget->GetRenderTarget());
             {
                 char fileName[MAX_PATH];
+                
 #if USE_VC4
-                sprintf_s(fileName, MAX_PATH, "c:\\temp\\image_%d_vc4.bmp", iFrame);
+                sprintf_s(fileName, MAX_PATH, "c:\\temp\\image_%s_%d_vc4.bmp", DXGIFormatToString(m_textureFormat), iFrame);
 #else
-                sprintf_s(fileName, MAX_PATH, "c:\\temp\\image_%d_warp.bmp", iFrame);
+                sprintf_s(fileName, MAX_PATH, "c:\\temp\\image_%s_%d_warp.bmp", DXGIFormatToString(m_textureFormat), iFrame);
 #endif // USE_VC4
                 m_pStagingTexture->WriteToBmp(fileName);
             }
@@ -1395,6 +1551,7 @@ private:
     std::unique_ptr<D3DSamplerState>        m_pSamplerState;
     std::unique_ptr<D3DVSConstantBuffer>    m_pVSConstantBuffer;
     std::unique_ptr<D3DPSConstantBuffer>    m_pPSConstantBuffer;
+    DXGI_FORMAT                             m_textureFormat;
 #if USE_BITMAP_TEX
     std::unique_ptr<D3DBitmapTexture>       m_pDefaultTexture;
 #else
@@ -1436,130 +1593,143 @@ BOOL InitPerf()
 
 int main(int argc, char* argv[])
 {
-    try
+
+    DXGI_FORMAT formatsToTest[3] =
     {
-        BOOL bPerfMode = false;
+        DXGI_FORMAT_R8G8B8A8_UNORM,
+        DXGI_FORMAT_R8G8_UNORM,
+        DXGI_FORMAT_R8_UNORM
+        //DXGI_FORMAT_A8_UNORM
+    };
 
-        LARGE_INTEGER   framesStart;
-        LARGE_INTEGER   framesEnd;
-
-        LARGE_INTEGER   frequenceStart;
-        LARGE_INTEGER   frequenceEnd;
-
-        if (argc >= 3)
+    for (int currentTest = 0; currentTest < 3; currentTest++)
+    {
+        printf("Test for [%s] \n", DXGIFormatToString(formatsToTest[currentTest]));
+        try
         {
-            bPerfMode = true;
-        }
+            BOOL bPerfMode = false;
 
-        if (bPerfMode)
-        {
-            sscanf_s(argv[1], "%d", &kWidth);
-            sscanf_s(argv[2], "%d", &kHeight);
+            LARGE_INTEGER   framesStart;
+            LARGE_INTEGER   framesEnd;
 
-            if (argc > 3)
+            LARGE_INTEGER   frequenceStart;
+            LARGE_INTEGER   frequenceEnd;
+
+            if (argc >= 3)
             {
-                sscanf_s(argv[3], "%d", &frames);
+                bPerfMode = true;
+            }
 
-                if (frames < 20)
+            if (bPerfMode)
+            {
+                sscanf_s(argv[1], "%d", &kWidth);
+                sscanf_s(argv[2], "%d", &kHeight);
+
+                if (argc > 3)
+                {
+                    sscanf_s(argv[3], "%d", &frames);
+
+                    if (frames < 20)
+                    {
+                        frames = 20;
+                    }
+                }
+                else
                 {
                     frames = 20;
                 }
             }
-            else
-            {
-                frames = 20;
-            }
-        }
 
-        D3DEngine engine;
-
-        if (bPerfMode)
-        {
-            pd3dDevice = engine.GetDevice();
-            pd3dContext = engine.GetContext();
-
-            InitPerf();
-        }
-
-        float t = 0.0f;
-        for (UINT i = 0; i < frames; i++)
-        {
-            // Skip the 1st frame for shader compilation time
-            if (bPerfMode && (i == 1))
-            {
-                QueryPerformanceCounter(&framesStart);
-                QueryPerformanceFrequency(&frequenceStart);
-            }
-
-            t += (float)XM_PI * 0.125f;
-            engine.Render(i, t, bPerfMode);
+            D3DEngine engine(formatsToTest[currentTest]);
 
             if (bPerfMode)
             {
-                if (i == 0)
-                {
-                    //
-                    // Wait for the 1st frame to finish to account for the GPU paging cost
-                    //
+                pd3dDevice = engine.GetDevice();
+                pd3dContext = engine.GetContext();
 
-                    DWORD dwWaitResult;
-
-                    pDxgiDev2->EnqueueSetEvent(hQueueEvent);
-
-                    dwWaitResult = WaitForSingleObject(
-                        hQueueEvent,    // event handle
-                        INFINITE);      // indefinite wait
-
-                    ResetEvent(hQueueEvent);
-                }
-                else if (i < (frames - 1))
-                {
-                    pd3dContext->Flush();
-                }
-                else
-                {
-                    pDxgiDev2->EnqueueSetEvent(hQueueEvent);
-                }
+                InitPerf();
             }
-        }
 
-        if (bPerfMode)
-        {
-            DWORD dwWaitResult;
-
-            dwWaitResult = WaitForSingleObject(
-                hQueueEvent,    // event handle
-                INFINITE);      // indefinite wait
-
-            if (dwWaitResult == WAIT_OBJECT_0)
+            float t = 0.0f;
+            for (UINT i = 0; i < frames; i++)
             {
-                QueryPerformanceCounter(&framesEnd);
-                QueryPerformanceFrequency(&frequenceEnd);
-
-                UINT measuredFrames = frames - 1;
-
-                if (frequenceStart.QuadPart != frequenceEnd.QuadPart)
+                // Skip the 1st frame for shader compilation time
+                if (bPerfMode && (i == 1))
                 {
-                    printf("Perf frequence changed during %d frames of rendering", measuredFrames);
+                    QueryPerformanceCounter(&framesStart);
+                    QueryPerformanceFrequency(&frequenceStart);
                 }
 
-                printf(
-                    "Average rendering time for (%d x %d) from %d frames: %I64d ms\n",
-                    kWidth,
-                    kHeight,
-                    measuredFrames,
-                    ((framesEnd.QuadPart - framesStart.QuadPart) * 1000) / (measuredFrames*frequenceEnd.QuadPart));
+                t += (float)XM_PI * 0.125f;
+                engine.Render(i, t, bPerfMode);
+
+                if (bPerfMode)
+                {
+                    if (i == 0)
+                    {
+                        //
+                        // Wait for the 1st frame to finish to account for the GPU paging cost
+                        //
+
+                        DWORD dwWaitResult;
+
+                        pDxgiDev2->EnqueueSetEvent(hQueueEvent);
+
+                        dwWaitResult = WaitForSingleObject(
+                            hQueueEvent,    // event handle
+                            INFINITE);      // indefinite wait
+
+                        ResetEvent(hQueueEvent);
+                    }
+                    else if (i < (frames - 1))
+                    {
+                        pd3dContext->Flush();
+                    }
+                    else
+                    {
+                        pDxgiDev2->EnqueueSetEvent(hQueueEvent);
+                    }
+                }
             }
 
-            UninitPerf();
+            if (bPerfMode)
+            {
+                DWORD dwWaitResult;
+
+                dwWaitResult = WaitForSingleObject(
+                    hQueueEvent,    // event handle
+                    INFINITE);      // indefinite wait
+
+                if (dwWaitResult == WAIT_OBJECT_0)
+                {
+                    QueryPerformanceCounter(&framesEnd);
+                    QueryPerformanceFrequency(&frequenceEnd);
+
+                    UINT measuredFrames = frames - 1;
+
+                    if (frequenceStart.QuadPart != frequenceEnd.QuadPart)
+                    {
+                        printf("Perf frequence changed during %d frames of rendering", measuredFrames);
+                    }
+
+                    printf(
+                        "Average rendering time for (%d x %d) from %d frames: %I64d ms\n",
+                        kWidth,
+                        kHeight,
+                        measuredFrames,
+                        ((framesEnd.QuadPart - framesStart.QuadPart) * 1000) / (measuredFrames*frequenceEnd.QuadPart));
+                }
+
+                UninitPerf();
+            }
+
+            printf("Success\n");
         }
 
-        printf("Success\n");
-    }
-
-    catch (std::exception & e)
-    {
-        printf("ERROR: %s\n", e.what());
+        catch (std::exception & e)
+        {
+            printf("ERROR: %s\n", e.what());
+        }
     }
 
     printf("Done\n");
