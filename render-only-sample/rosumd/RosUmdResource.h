@@ -118,6 +118,11 @@ private:
         UINT rowStride, 
         BOOLEAN OddRow);
 
+    void CalculateTilesInfo();
+
+    void FillTileInfo(UINT bpp);
+
+    VC4TileInfo m_TileInfo;
 
 };
 
