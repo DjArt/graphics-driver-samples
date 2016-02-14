@@ -2,6 +2,7 @@
 
 #include "RosAllocation.h"
 #include "Pixel.hpp"
+#include "Vc4Hw.h"
 
 class RosUmdResource
 {
@@ -118,6 +119,11 @@ private:
         UINT rowStride, 
         BOOLEAN OddRow);
 
+    void CalculateTilesInfo();
+
+    void FillTileInfo(UINT bpp);
+
+    VC4TileInfo m_TileInfo;
 
 };
 
